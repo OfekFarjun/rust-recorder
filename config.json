@@ -1,0 +1,8 @@
+{
+    "recordings_folder": "./recordings",
+    "keep_alive_timeout_in_secs": 100,
+    "capture": {
+        "bitrate": 5000000,
+        "fps": 15
+    }
+}
