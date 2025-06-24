@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 windows-capture = "1.4.4"
 tokio = { version = "1", features = ["full"] }
-warp = "0.3"
 serde = {version = "1.0.219", features = ["derive"]}
 axum = "0.8.4"
 serde_json = "1.0.140"
