@@ -5,6 +5,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use log::{info, warn};
 
 use windows_capture::{
     capture::{Context, GraphicsCaptureApiHandler},
@@ -41,7 +42,7 @@ impl GraphicsCaptureApiHandler for Capture {
 
     // Function that will be called to create a new instance. The flags can be passed from settings.
     fn new(ctx: Context<Self::Flags>) -> Result<Self, Self::Error> {
-        println!("with flags: {:?}\n", ctx.flags);
+        info!("Capture is starting via the windows-capture api, with flags: {:?}", ctx.flags);
 
         let encoder = VideoEncoder::new(
             VideoSettingsBuilder::new(ctx.flags.width, ctx.flags.height)
@@ -79,7 +80,7 @@ impl GraphicsCaptureApiHandler for Capture {
 
     // Optional handler called when the capture item (usually a window) closes.
     fn on_closed(&mut self) -> Result<(), Self::Error> {
-        println!("Capture window has been closed");
+        warn!("Capture window has been closed");
 
         Ok(())
     }
@@ -119,15 +120,15 @@ pub fn record_screen(recording: Arc<Mutex<bool>>, recording_raw: Arc<Mutex<bool>
     // Starts the capture and takes control of the current thread.
     // The errors from handler trait will end up here
     thread::spawn(move || {
-        print!("Capture is starting via the windows-capture api, ");
         let capture = Capture::start_free_threaded(settings).expect("Screen capture failed");
         let start = Instant::now();
 
         loop {
             if !*recording.lock().unwrap() || capture.is_finished()  {
+                println!();
                 break;
             }
-            print!("\rRecording for {} seconds", start.elapsed().as_secs());
+            print!("\rRecording for {} seconds...", start.elapsed().as_secs());
             let _ = io::stdout().flush();
             thread::sleep(Duration::from_millis(100));
         }
@@ -137,8 +138,8 @@ pub fn record_screen(recording: Arc<Mutex<bool>>, recording_raw: Arc<Mutex<bool>
         *recording_raw.lock().unwrap() = false;
         *recording.lock().unwrap() = false;
 
-        println!(
-            "\nCapture is done, ran for {} seconds\n",
+        info!(
+            "Capture is done, ran for {} seconds",
             start.elapsed().as_secs()
         );
     });

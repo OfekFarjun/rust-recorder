@@ -50,6 +50,6 @@ async fn upload_file(file_name: String) -> Result<bool, Box<dyn std::error::Erro
         .send()
         .await?;
 
-    println!("{}", res.status());
+    info!("{}", res.status());
     Ok(res.status() == StatusCode::OK)
 }
