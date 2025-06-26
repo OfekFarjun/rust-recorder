@@ -1,6 +1,7 @@
+pub mod errors;
+
 use axum::{
     extract::State,
-    http::StatusCode,
     response::Json,
     routing::{get, post},
     Router,
@@ -14,7 +15,9 @@ use std::{
     u64,
 };
 
-use crate::{capture, config::Config, keep_alive::keep_alive_task};
+use crate::{
+    api::errors::ApiError, audio, capture, config::Config, ffmpeg, keep_alive::keep_alive_task,
+};
 
 #[derive(Deserialize, Serialize)]
 pub struct Status {
@@ -25,16 +28,20 @@ pub struct Status {
 
 pub struct AppState {
     pub recording: Arc<Mutex<bool>>,
-    pub recording_raw: Arc<Mutex<bool>>,
+    pub recording_screen_raw: Arc<Mutex<bool>>,
+    pub recording_audio_raw: Arc<Mutex<bool>>,
     pub last_keep_alive: Mutex<u64>,
+    pub filename: Mutex<String>,
     pub config: Config,
 }
 
 pub async fn start(config: Config) {
     let shared_state = Arc::new(AppState {
         recording: Arc::new(Mutex::new(false)),
-        recording_raw: Arc::new(Mutex::new(false)),
+        recording_screen_raw: Arc::new(Mutex::new(false)),
+        recording_audio_raw: Arc::new(Mutex::new(false)),
         last_keep_alive: Mutex::new(0),
+        filename: Mutex::new(format!("None")),
         config,
     });
 
@@ -53,56 +60,70 @@ pub async fn start(config: Config) {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn status(State(state): State<Arc<AppState>>) -> Result<Json<Value>, StatusCode> {
+async fn status(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
     Ok(Json(json!(&Status {
         message: "Recorder is ok!".to_string(),
-        recording: *state.recording.lock().unwrap() || *state.recording_raw.lock().unwrap(),
+        recording: *state.recording.lock().unwrap() || *state.recording_screen_raw.lock().unwrap(),
         last_keep_alive: *state.last_keep_alive.lock().unwrap()
     })))
 }
 
-async fn start_recording(State(state): State<Arc<AppState>>) -> Result<String, StatusCode> {
+async fn start_recording(State(state): State<Arc<AppState>>) -> Result<String, ApiError> {
     let recording: bool = *state.recording.lock().unwrap();
-    let recording_raw: bool = *state.recording_raw.lock().unwrap();
-    match recording || recording_raw {
+    let recording_screen_raw: bool = *state.recording_screen_raw.lock().unwrap();
+    let recording_audio_raw = *state.recording_audio_raw.lock().unwrap();
+    match recording || recording_screen_raw || recording_audio_raw {
         false => {
+            let filename = format!(
+                "{}/{}",
+                state.config.recordings_folder,
+                Local::now().format("%d.%m.%Y-%H_%M_%S")
+            );
+            *state.filename.lock().unwrap() = filename.clone();
             capture::record_screen(
                 state.recording.clone(),
-                state.recording_raw.clone(),
-                format!(
-                    "{}/{}",
-                    state.config.recordings_folder,
-                    Local::now().format("%d.%m.%Y-%H_%M_%S.mp4").to_string()
-                ),
+                state.recording_screen_raw.clone(),
+                format!("{filename}.mp4"),
                 state.config.capture,
-            );
+            ).or(Err(ApiError::InternalServerError))?;
+            audio::record_audio(
+                state.recording.clone(),
+                state.recording_audio_raw.clone(),
+                format!("{filename}.wav"),
+            ).or(Err(ApiError::InternalServerError))?;
             refresh_keep_alive(state);
             Ok(format!("Screen capture started"))
         }
-        _ => Err(StatusCode::BAD_REQUEST),
+        _ => Err(ApiError::CaptureAlreadyInProgress),
     }
 }
 
-async fn stop_recording(State(state): State<Arc<AppState>>) -> Result<String, StatusCode> {
+async fn stop_recording(State(state): State<Arc<AppState>>) -> Result<String, ApiError> {
     let recording: bool = *state.recording.lock().unwrap();
-    let recording_raw: bool = *state.recording_raw.lock().unwrap();
-    match recording || recording_raw {
+    let recording_screen_raw: bool = *state.recording_screen_raw.lock().unwrap();
+    let recording_audio_raw = *state.recording_audio_raw.lock().unwrap();
+    match recording || recording_screen_raw || recording_audio_raw {
         true => {
             *state.recording.lock().unwrap() = false;
             loop {
                 tokio::time::sleep(Duration::from_millis(50)).await;
-                if !*state.recording_raw.lock().unwrap() {
+                if !*state.recording_screen_raw.lock().unwrap()
+                    && !*state.recording_audio_raw.lock().unwrap()
+                {
                     break;
                 }
             }
 
-            Ok(format!("Screen capture stopped"))
+            ffmpeg::combine_outputs(&*state.filename.lock().unwrap())
+                .or(Err(ApiError::InternalServerError))?;
+
+            Ok(format!("Capture stopped successfully"))
         }
-        _ => Err(StatusCode::BAD_REQUEST),
+        _ => Err(ApiError::NoCaptureIsRunning),
     }
 }
 
-async fn keep_alive(State(state): State<Arc<AppState>>) -> Result<String, StatusCode> {
+async fn keep_alive(State(state): State<Arc<AppState>>) -> Result<String, ApiError> {
     refresh_keep_alive(state);
 
     Ok(format!("Ok"))

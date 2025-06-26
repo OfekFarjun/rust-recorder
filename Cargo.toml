@@ -17,3 +17,6 @@ tokio-util = {version="0.7.15", features=["codec"]}
 config-file = { version = "0.2.3", features = ["json"] }
 log = "0.4.27"
 pretty_env_logger = "0.5.0"
+hound = "3.5.1"
+cpal = "0.16.0"
+anyhow = "1.0.98"

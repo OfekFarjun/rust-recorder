@@ -1,3 +1,5 @@
+use anyhow::Ok;
+use log::{info, warn};
 use std::{
     io::{self, Write},
     path::Path,
@@ -5,7 +7,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use log::{info, warn};
 
 use windows_capture::{
     capture::{Context, GraphicsCaptureApiHandler},
@@ -30,7 +31,7 @@ struct CustomFlags {
     height: u32,
     filename: Arc<String>,
     capture_config: CaptureConfig,
-    recording_raw: Arc<Mutex<bool>>
+    recording_raw: Arc<Mutex<bool>>,
 }
 
 impl GraphicsCaptureApiHandler for Capture {
@@ -38,11 +39,14 @@ impl GraphicsCaptureApiHandler for Capture {
     type Flags = CustomFlags;
 
     // The type of error that can be returned from `CaptureControl` and `start` functions.
-    type Error = Box<dyn std::error::Error + Send + Sync>;
+    type Error = anyhow::Error;
 
     // Function that will be called to create a new instance. The flags can be passed from settings.
     fn new(ctx: Context<Self::Flags>) -> Result<Self, Self::Error> {
-        info!("Capture is starting via the windows-capture api, with flags: {:?}", ctx.flags);
+        info!(
+            "Capture is starting via the windows-capture api, with flags: {:?}",
+            ctx.flags
+        );
 
         let encoder = VideoEncoder::new(
             VideoSettingsBuilder::new(ctx.flags.width, ctx.flags.height)
@@ -55,7 +59,7 @@ impl GraphicsCaptureApiHandler for Capture {
 
         Ok(Self {
             encoder: Some(encoder),
-            flags: ctx.flags
+            flags: ctx.flags,
         })
     }
 
@@ -86,17 +90,18 @@ impl GraphicsCaptureApiHandler for Capture {
     }
 }
 
-pub fn record_screen(recording: Arc<Mutex<bool>>, recording_raw: Arc<Mutex<bool>>, filename: String, capture_config: CaptureConfig) {
+pub fn record_screen(
+    recording: Arc<Mutex<bool>>,
+    recording_raw: Arc<Mutex<bool>>,
+    filename: String,
+    capture_config: CaptureConfig,
+) -> Result<(), anyhow::Error> {
     // Gets the foreground window, refer to the docs for other capture items
-    let primary_monitor = Monitor::primary().expect("There is no primary monitor");
+    let primary_monitor = Monitor::primary()?;
 
     let dimensions = CustomFlags {
-        width: primary_monitor
-            .width()
-            .expect("Could not access primary monitor"),
-        height: primary_monitor
-            .height()
-            .expect("Could not access primary monitor"),
+        width: primary_monitor.width()?,
+        height: primary_monitor.height()?,
         filename: Arc::new(filename),
         capture_config,
         recording_raw: recording_raw.clone(),
@@ -120,11 +125,13 @@ pub fn record_screen(recording: Arc<Mutex<bool>>, recording_raw: Arc<Mutex<bool>
     // Starts the capture and takes control of the current thread.
     // The errors from handler trait will end up here
     thread::spawn(move || {
-        let capture = Capture::start_free_threaded(settings).expect("Screen capture failed");
+        let capture = Capture::start_free_threaded(settings).ok();
         let start = Instant::now();
 
         loop {
-            if !*recording.lock().unwrap() || capture.is_finished()  {
+            if !*recording.lock().unwrap()
+                || (capture.is_some() && capture.as_ref().unwrap().is_finished())
+            {
                 println!();
                 break;
             }
@@ -133,14 +140,21 @@ pub fn record_screen(recording: Arc<Mutex<bool>>, recording_raw: Arc<Mutex<bool>
             thread::sleep(Duration::from_millis(100));
         }
 
-        capture.stop().unwrap();
+        *recording.lock().unwrap() = false;
+
+        if capture.is_some() {
+            capture.unwrap().stop()?;
+        }
 
         *recording_raw.lock().unwrap() = false;
-        *recording.lock().unwrap() = false;
 
         info!(
             "Capture is done, ran for {} seconds",
             start.elapsed().as_secs()
         );
+
+        Ok(())
     });
+
+    Ok(())
 }

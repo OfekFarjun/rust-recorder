@@ -3,6 +3,9 @@ mod capture;
 mod config;
 mod keep_alive;
 mod logger;
+mod audio;
+mod ffmpeg;
+
 use log::info;
 
 #[tokio::main]
