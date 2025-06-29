@@ -44,28 +44,30 @@ pub fn record_audio(
 
     let writer_ptr = writer.clone();
 
+    let recording_raw_ptr = recording_raw.clone();
+    
     let stream = match config.sample_format() {
         cpal::SampleFormat::I8 => device.build_input_stream(
             &config.into(),
-            move |data, _: &_| write_input_data::<i8, i8>(data, &writer_ptr),
+            move |data, _: &_| write_input_data::<i8, i8>(&recording_raw_ptr, data, &writer_ptr),
             err_fn,
             None,
         )?,
         cpal::SampleFormat::I16 => device.build_input_stream(
             &config.into(),
-            move |data, _: &_| write_input_data::<i16, i16>(data, &writer_ptr),
+            move |data, _: &_| write_input_data::<i16, i16>(&recording_raw_ptr, data, &writer_ptr),
             err_fn,
             None,
         )?,
         cpal::SampleFormat::I32 => device.build_input_stream(
             &config.into(),
-            move |data, _: &_| write_input_data::<i32, i32>(data, &writer_ptr),
+            move |data, _: &_| write_input_data::<i32, i32>(&recording_raw_ptr, data, &writer_ptr),
             err_fn,
             None,
         )?,
         cpal::SampleFormat::F32 => device.build_input_stream(
             &config.into(),
-            move |data, _: &_| write_input_data::<f32, f32>(data, &writer_ptr),
+            move |data, _: &_| write_input_data::<f32, f32>(&recording_raw_ptr, data, &writer_ptr),
             err_fn,
             None,
         )?,
@@ -81,6 +83,7 @@ pub fn record_audio(
         device.name().unwrap_or("None".into())
     );
     stream.play()?;
+    *recording_raw.lock().unwrap() = true;
 
     thread::spawn(move || {
         loop {
@@ -100,11 +103,12 @@ pub fn record_audio(
 
 type WavWriterHandle = Arc<Mutex<hound::WavWriter<BufWriter<File>>>>;
 
-fn write_input_data<T, U>(input: &[T], writer: &WavWriterHandle)
+fn write_input_data<T, U>(recording: &Arc<Mutex<bool>>, input: &[T], writer: &WavWriterHandle)
 where
     T: Sample,
     U: Sample + hound::Sample + FromSample<T>,
 {
+    *recording.lock().unwrap() = true;
     if let Ok(mut writer) = writer.try_lock() {
         for &sample in input.iter() {
             let sample: U = U::from_sample(sample);
