@@ -7,6 +7,7 @@ use axum::{
     Router,
 };
 use chrono::Local;
+use log::warn;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -22,8 +23,15 @@ use crate::{
 #[derive(Deserialize, Serialize)]
 pub struct Status {
     pub message: String,
-    pub recording: bool,
+    pub recording: RecordingStatus,
     pub last_keep_alive: u64,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct RecordingStatus {
+    pub running: bool,
+    pub video: bool,
+    pub audio: bool,
 }
 
 pub struct AppState {
@@ -61,9 +69,16 @@ pub async fn start(config: Config) {
 }
 
 async fn status(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+    let recording: bool = *state.recording.lock().unwrap();
+    let recording_screen_raw: bool = *state.recording_screen_raw.lock().unwrap();
+    let recording_audio_raw = *state.recording_audio_raw.lock().unwrap();
     Ok(Json(json!(&Status {
         message: "Recorder is ok!".to_string(),
-        recording: *state.recording.lock().unwrap() || *state.recording_screen_raw.lock().unwrap(),
+        recording: RecordingStatus {
+            running: recording || recording_screen_raw || recording_audio_raw,
+            video: recording_screen_raw,
+            audio: recording_audio_raw
+        },
         last_keep_alive: *state.last_keep_alive.lock().unwrap()
     })))
 }
@@ -85,12 +100,18 @@ async fn start_recording(State(state): State<Arc<AppState>>) -> Result<String, A
                 state.recording_screen_raw.clone(),
                 format!("{filename}.mp4"),
                 state.config.capture,
-            ).or(Err(ApiError::InternalServerError))?;
-            audio::record_audio(
+            )?;
+            let audio_error = audio::record_audio(
                 state.recording.clone(),
                 state.recording_audio_raw.clone(),
                 format!("{filename}.wav"),
-            ).or(Err(ApiError::InternalServerError))?;
+            )
+            .err();
+            match audio_error {
+                Some(err) => warn!("Could not start audio recording! {:?}", err),
+                _ => (),
+            };
+
             refresh_keep_alive(state);
             Ok(format!("Screen capture started"))
         }
@@ -114,8 +135,7 @@ async fn stop_recording(State(state): State<Arc<AppState>>) -> Result<String, Ap
                 }
             }
 
-            ffmpeg::combine_outputs(&*state.filename.lock().unwrap())
-                .or(Err(ApiError::InternalServerError))?;
+            ffmpeg::combine_outputs(&*state.filename.lock().unwrap())?;
 
             Ok(format!("Capture stopped successfully"))
         }
