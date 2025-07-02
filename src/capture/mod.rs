@@ -111,9 +111,15 @@ pub fn record_screen(
         // Item to capture
         primary_monitor,
         // Capture cursor settings
-        CursorCaptureSettings::Default,
+        CursorCaptureSettings::WithCursor,
         // Draw border settings
         DrawBorderSettings::WithoutBorder,
+
+        windows_capture::settings::SecondaryWindowSettings::Default,
+
+        windows_capture::settings::MinimumUpdateIntervalSettings::Default,
+
+        windows_capture::settings::DirtyRegionSettings::Default,
         // The desired color format for the captured frame.
         ColorFormat::Rgba8,
         // Additional flags for the capture settings that will be passed to user defined `new` function.
