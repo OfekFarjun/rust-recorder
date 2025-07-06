@@ -10,6 +10,7 @@ pub struct Config {
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 pub struct CaptureConfig {
+    pub ffmpeg: bool,
     pub bitrate: u32,
     pub fps: u32,
 }

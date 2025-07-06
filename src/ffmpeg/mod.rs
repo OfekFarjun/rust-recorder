@@ -1,7 +1,9 @@
 use std::process::{Command};
-
 use anyhow::Error;
 use log::{info, warn};
+
+pub mod capture;
+
 
 pub fn combine_outputs(filename: &str) -> Result<(), anyhow::Error> {
     let video = format!("{}.mp4", filename);

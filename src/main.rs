@@ -5,6 +5,7 @@ mod keep_alive;
 mod logger;
 mod audio;
 mod ffmpeg;
+mod native_capture;
 
 use log::info;
 

@@ -89,13 +89,15 @@ async fn start_recording(State(state): State<Arc<AppState>>) -> Result<String, A
     let recording_audio_raw = *state.recording_audio_raw.lock().unwrap();
     match recording || recording_screen_raw || recording_audio_raw {
         false => {
+            refresh_keep_alive(state.clone());
+
             let filename = format!(
                 "{}/{}",
                 state.config.recordings_folder,
                 Local::now().format("%d.%m.%Y-%H_%M_%S")
             );
             *state.filename.lock().unwrap() = filename.clone();
-            capture::record_screen(
+            capture::capture_screen(
                 state.recording.clone(),
                 state.recording_screen_raw.clone(),
                 format!("{filename}.mp4"),
@@ -112,7 +114,6 @@ async fn start_recording(State(state): State<Arc<AppState>>) -> Result<String, A
                 _ => (),
             };
 
-            refresh_keep_alive(state);
             Ok(format!("Screen capture started"))
         }
         _ => Err(ApiError::CaptureAlreadyInProgress),

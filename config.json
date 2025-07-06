@@ -2,6 +2,7 @@
     "recordings_folder": "./recordings",
     "keep_alive_timeout_in_secs": 100,
     "capture": {
+        "ffmpeg": false,
         "bitrate": 5000000,
         "fps": 15
     }
